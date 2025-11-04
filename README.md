@@ -147,58 +147,6 @@ base64 -w0 wg0.conf > wg0.conf.b64
 
 Then add the contents to your GitHub repository or organization secrets as `WG_CLIENT_CONF_BASE64`.
 
-### WireGuard Config for Split Tunneling
-
-**CRITICAL:** When using split tunneling with `domains` or `ips` parameters, your WireGuard config must be correct or networking will break.
-
-#### ❌ WRONG Configurations:
-
-**Wrong 1: AllowedIPs routes all traffic**
-```ini
-[Interface]
-PrivateKey = your-private-key
-Address = 10.7.0.2/24
-
-[Peer]
-PublicKey = server-public-key
-Endpoint = vpn.example.com:51820
-AllowedIPs = 0.0.0.0/0, ::/0  # ❌ Routes ALL traffic
-```
-
-**Wrong 2: AllowedIPs contains YOUR OWN address** ⚠️ **BREAKS EVERYTHING**
-```ini
-[Interface]
-PrivateKey = your-private-key
-Address = 10.7.0.2/24
-
-[Peer]
-PublicKey = server-public-key
-Endpoint = vpn.example.com:51820
-AllowedIPs = 10.7.0.2/24  # ❌ WRONG! This is YOUR address!
-```
-This **completely breaks routing**! `AllowedIPs` = networks **reachable through peer**, NOT your own address.
-
-#### ✅ CORRECT Configuration:
-
-```ini
-[Interface]
-PrivateKey = your-private-key
-Address = 10.7.0.2/24
-DNS = 1.1.1.1, 1.0.0.1  # Optional, stripped by default
-
-[Peer]
-PublicKey = server-public-key
-Endpoint = vpn.example.com:51820
-AllowedIPs = 10.7.0.0/24  # ✅ VPN network (via peer)
-PersistentKeepalive = 25
-```
-
-**Key points:**
-- `Address`: Your client's VPN address (e.g., `10.7.0.2/24`)
-- `AllowedIPs`: Networks **reachable through the peer** (e.g., `10.7.0.0/24` for VPN subnet)
-- Action strips `DNS` by default to preserve system DNS (disable: `strip_dns: "false"`)
-- Specific IP/domain routes are added dynamically
-
 ## How It Works
 
 ### Automatic Mode Detection

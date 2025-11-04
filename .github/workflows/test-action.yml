@@ -30,8 +30,7 @@ jobs:
       - name: Sanity (direct egress stays on eth0)
         run: |
           set -eux
-          ip route get 140.82.112.3 || true             # sample GitHub IP; should say "dev eth0"
-          curl -4 -fsS --connect-timeout 5 --max-time 8 https://www.google.com/generate_204 -o /dev/null
+          ip route get 140.82.112.3
 
       - name: Test SSH connectivity
         run: |

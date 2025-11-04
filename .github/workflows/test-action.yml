@@ -28,7 +28,7 @@ jobs:
           ip route show
 
       - name: Ping Google
-        run: ping www.google.com
+        run: ping -c 5 google.com
 
       - name: Test SSH connectivity
         run: |

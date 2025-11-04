@@ -27,14 +27,20 @@ jobs:
           sudo wg show
           ip route show
 
-      - name: Ping Google
-        run: ping -c 5 google.com
+      - name: Sanity (direct egress stays on eth0)
+        run: |
+          set -eux
+          ip route get 140.82.112.3 || true             # sample GitHub IP; should say "dev eth0"
+          curl -4 -fsS --connect-timeout 5 --max-time 8 https://www.google.com/generate_204 -o /dev/null
 
       - name: Test SSH connectivity
         run: |
           echo "Testing SSH key scan..."
           ssh-keyscan -H -T 10 "${{ inputs.test_ip }}"
           echo "SSH key scan successful!"
+
+      - name: Curl Google
+        run: curl -4 -fsS --connect-timeout 5 --max-time 8 https://www.google.com/generate_204 -o /dev/null
 
       - name: Additional connectivity test
         run: |

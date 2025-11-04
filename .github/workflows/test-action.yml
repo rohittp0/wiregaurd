@@ -7,7 +7,7 @@ on:
         description: 'IP address to test connectivity'
         required: true
 
-#concurrency: test-connection
+concurrency: test-connection
 
 jobs:
   test-local-action:

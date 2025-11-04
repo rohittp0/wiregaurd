@@ -41,6 +41,9 @@ jobs:
       - name: Curl Google
         run: curl -4 -fsS --connect-timeout 5 --max-time 8 https://www.google.com/generate_204 -o /dev/null
 
+      - name: Test public IP
+        run: curl https://ipinfo.io/ip
+
       - name: Additional connectivity test
         run: |
           echo "Testing direct connection..."

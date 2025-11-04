@@ -1,0 +1,37 @@
+name: Test WireGuard Action
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_ip:
+        description: 'IP address to test connectivity'
+        required: true
+
+jobs:
+  test-local-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup WireGuard with local action
+        uses: ./
+        with:
+          config: ${{ secrets.WG_CLIENT_CONF_BASE64 }}
+          ips: ${{ inputs.test_ip }}
+
+      - name: Verify WireGuard interface
+        run: |
+          sudo wg show
+          ip route show
+
+      - name: Test SSH connectivity
+        run: |
+          echo "Testing SSH key scan..."
+          ssh-keyscan -H -T 10 "${{ inputs.test_ip }}" >> ~/.ssh/known_hosts
+          echo "SSH key scan successful!"
+
+      - name: Additional connectivity test
+        run: |
+          echo "Testing direct connection..."
+          nc -zv -w 5 ${{ inputs.test_ip }} 22 || echo "Direct connection test failed (may be expected)"

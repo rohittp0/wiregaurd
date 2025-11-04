@@ -45,11 +45,12 @@ async function resolveDomainIPs(domain: string): Promise<string[]> {
     return ips;
 }
 
-async function addRoutesForDomains(domains: string[], iface: string): Promise<void> {
-    if (!domains.length) return;
+async function addRoutesForDomains(domains: string[], iface: string): Promise<string[]> {
+    if (!domains.length) return [];
 
     core.info(`Adding routes for ${domains.length} domain(s)...`);
     let routeCount = 0;
+    const allIPs: string[] = [];
 
     for (const domain of domains) {
         core.info(`Resolving ${domain}...`);
@@ -60,6 +61,7 @@ async function addRoutesForDomains(domains: string[], iface: string): Promise<vo
                 core.info(`Adding route for ${domain} (${ip}) via ${iface}`);
                 await addSingleRoute(ip, iface);
                 routeCount++;
+                allIPs.push(ip);
             } catch (err: any) {
                 core.warning(`Failed to add route for ${ip}: ${err.message}`);
             }
@@ -67,6 +69,7 @@ async function addRoutesForDomains(domains: string[], iface: string): Promise<vo
     }
 
     core.info(`Added ${routeCount} route(s) for domains.`);
+    return allIPs;
 }
 
 async function addRoutesForIPs(ips: string[], iface: string): Promise<void> {
@@ -90,9 +93,26 @@ async function addRoutesForIPs(ips: string[], iface: string): Promise<void> {
 
 }
 
-async function addRoutes(domains: string[], ips: string[], iface: string): Promise<void> {
-    await addRoutesForDomains(domains, iface);
+async function testConnectivity(ips: string[]): Promise<void> {
+    if (!ips.length) return;
+
+    core.info("Testing connectivity to routed IPs...");
+
+    for (const ip of ips.slice(0, 3)) { // Test up to 3 IPs to avoid timeout
+        try {
+            core.info(`Pinging ${ip}...`);
+            const pingCmd = ip.includes(":") ? "ping6" : "ping";
+            await exec.exec(pingCmd, ["-c", "3", "-W", "2", ip], {ignoreReturnCode: true});
+        } catch (err: any) {
+            core.warning(`Ping test failed for ${ip}: ${err.message}`);
+        }
+    }
+}
+
+async function addRoutes(domains: string[], ips: string[], iface: string): Promise<string[]> {
+    const domainIPs = await addRoutesForDomains(domains, iface);
     await addRoutesForIPs(ips, iface);
+    return [...domainIPs, ...ips];
 }
 
 async function installWireGuard(): Promise<void> {
@@ -118,6 +138,10 @@ async function startWireGuardInterface(iface: string): Promise<void> {
     core.info(`Starting WireGuard interface '${iface}'...`);
     await exec.exec("sudo", ["wg-quick", "up", iface]);
     core.info(`WireGuard interface '${iface}' is up.`);
+
+    // Wait for interface to stabilize
+    core.info("Waiting for tunnel to stabilize...");
+    await new Promise(resolve => setTimeout(resolve, 5000));
 }
 
 async function setupWireGuard(config: string, iface: string): Promise<void> {
@@ -134,7 +158,13 @@ async function handleAddRouteMode(domains: string[], ips: string[], iface: strin
         return;
     }
 
-    await addRoutes(domains, ips, iface);
+    const allIPs = await addRoutes(domains, ips, iface);
+
+    // Test connectivity
+    if (allIPs.length > 0) {
+        await testConnectivity(allIPs);
+    }
+
     core.info("Route addition complete.");
 }
 
@@ -142,7 +172,12 @@ async function handleSetupMode(config: string, domains: string[], ips: string[],
     core.info("Setting up WireGuard interface...");
 
     await setupWireGuard(config, iface);
-    await addRoutes(domains, ips, iface);
+    const allIPs = await addRoutes(domains, ips, iface);
+
+    // Test connectivity
+    if (allIPs.length > 0) {
+        await testConnectivity(allIPs);
+    }
 
     core.info("WireGuard setup complete.");
 }

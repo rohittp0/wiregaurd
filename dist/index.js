@@ -25957,20 +25957,35 @@ async function addSingleRoute(ip, iface) {
 }
 async function resolveDomainIPs(domain) {
     const ips = [];
-    // Resolve IPv4
+    // Helper to add timeout to DNS resolution
+    const resolveWithTimeout = async (promise, timeoutMs) => {
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs));
+        return Promise.race([promise, timeoutPromise]);
+    };
+    // Resolve IPv4 with timeout
     try {
-        const ipv4Addresses = await dns_1.promises.resolve4(domain);
-        ips.push(...ipv4Addresses);
+        const ipv4Addresses = await resolveWithTimeout(dns_1.promises.resolve4(domain), 5000);
+        if (ipv4Addresses) {
+            ips.push(...ipv4Addresses);
+        }
+        else {
+            core.warning(`IPv4 resolution for ${domain} timed out`);
+        }
     }
     catch (err) {
         if (err.code !== 'ENOTFOUND' && err.code !== 'ENODATA') {
             core.warning(`Failed to resolve IPv4 for ${domain}: ${err.message}`);
         }
     }
-    // Resolve IPv6
+    // Resolve IPv6 with timeout
     try {
-        const ipv6Addresses = await dns_1.promises.resolve6(domain);
-        ips.push(...ipv6Addresses);
+        const ipv6Addresses = await resolveWithTimeout(dns_1.promises.resolve6(domain), 5000);
+        if (ipv6Addresses) {
+            ips.push(...ipv6Addresses);
+        }
+        else {
+            core.warning(`IPv6 resolution for ${domain} timed out`);
+        }
     }
     catch (err) {
         if (err.code !== 'ENOTFOUND' && err.code !== 'ENODATA') {
@@ -26029,10 +26044,13 @@ async function testConnectivity(ips) {
         try {
             core.info(`Pinging ${ip}...`);
             const pingCmd = ip.includes(":") ? "ping6" : "ping";
-            await exec.exec(pingCmd, ["-c", "3", "-W", "2", ip], { ignoreReturnCode: true });
+            // Use a promise race to implement hard timeout
+            const pingPromise = exec.exec(pingCmd, ["-c", "2", "-W", "3", ip], { ignoreReturnCode: true });
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Ping timeout")), 10000));
+            await Promise.race([pingPromise, timeoutPromise]);
         }
         catch (err) {
-            core.warning(`Ping test failed for ${ip}: ${err.message}`);
+            core.warning(`Ping test for ${ip} failed or timed out: ${err.message}`);
         }
     }
 }
@@ -26045,11 +26063,21 @@ async function installWireGuard() {
     core.info("Installing WireGuard...");
     await exec.exec("sudo", ["apt-get", "install", "-y", "wireguard"]);
 }
-async function setupWireGuardConfig(config, iface) {
-    // Decode config to temp file
+async function setupWireGuardConfig(config, iface, stripDns) {
+    // Decode config
+    let configContent = Buffer.from(config, "base64").toString("utf8");
+    // Strip DNS if requested
+    if (stripDns) {
+        core.info("Stripping DNS configuration to preserve system DNS...");
+        configContent = configContent
+            .split("\n")
+            .filter(line => !line.trim().toLowerCase().startsWith("dns"))
+            .join("\n");
+    }
+    // Write to temp file
     const tmpDir = await fs_1.promises.mkdtemp(path.join(os.tmpdir(), "wg-"));
     const tmpConf = path.join(tmpDir, `${iface}.conf`);
-    await fs_1.promises.writeFile(tmpConf, Buffer.from(config, "base64").toString("utf8"), { mode: 0o600 });
+    await fs_1.promises.writeFile(tmpConf, configContent, { mode: 0o600 });
     // Copy to /etc/wireguard with proper permissions
     const etcDir = "/etc/wireguard";
     await io.mkdirP(etcDir);
@@ -26065,9 +26093,9 @@ async function startWireGuardInterface(iface) {
     core.info("Waiting for tunnel to stabilize...");
     await new Promise(resolve => setTimeout(resolve, 5000));
 }
-async function setupWireGuard(config, iface) {
+async function setupWireGuard(config, iface, stripDns) {
     await installWireGuard();
-    await setupWireGuardConfig(config, iface);
+    await setupWireGuardConfig(config, iface, stripDns);
     await startWireGuardInterface(iface);
 }
 async function handleAddRouteMode(domains, ips, iface) {
@@ -26083,9 +26111,9 @@ async function handleAddRouteMode(domains, ips, iface) {
     }
     core.info("Route addition complete.");
 }
-async function handleSetupMode(config, domains, ips, iface) {
+async function handleSetupMode(config, domains, ips, iface, stripDns) {
     core.info("Setting up WireGuard interface...");
-    await setupWireGuard(config, iface);
+    await setupWireGuard(config, iface, stripDns);
     const allIPs = await addRoutes(domains, ips, iface);
     // Test connectivity
     if (allIPs.length > 0) {
@@ -26106,6 +26134,7 @@ async function run() {
         const iface = core.getInput("iface") || "wg0";
         const domains = parseInputList(core.getInput("domains") || "");
         const ips = parseInputList(core.getInput("ips") || "");
+        const stripDns = core.getInput("strip_dns") !== "false"; // Default true
         // Determine mode based on interface existence
         const interfaceExists = await checkInterfaceExists(iface);
         if (interfaceExists) {
@@ -26113,7 +26142,7 @@ async function run() {
         }
         else {
             const config = core.getInput("config", { required: true });
-            await handleSetupMode(config, domains, ips, iface);
+            await handleSetupMode(config, domains, ips, iface, stripDns);
         }
     }
     catch (err) {

@@ -21,6 +21,10 @@ inputs:
     description: "Comma-separated list of IP addresses (IPv4 or IPv6) to route through WireGuard."
     required: false
     default: ""
+  strip_dns:
+    description: "Strip DNS configuration from WireGuard config to prevent DNS override (recommended for split tunneling)"
+    required: false
+    default: "true"
 
 outputs:
   public_ip:

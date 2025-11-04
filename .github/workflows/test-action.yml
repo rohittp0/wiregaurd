@@ -25,10 +25,13 @@ jobs:
           sudo wg show
           ip route show
 
+      - name: Ping Google
+        run: ping www.google.com
+
       - name: Test SSH connectivity
         run: |
           echo "Testing SSH key scan..."
-          ssh-keyscan -H -T 10 "${{ inputs.test_ip }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H -T 10 "${{ inputs.test_ip }}"
           echo "SSH key scan successful!"
 
       - name: Additional connectivity test
